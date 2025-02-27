@@ -12,18 +12,20 @@ import (
     "os/exec"
     "path/filepath"
     "sort"
+    "strconv"
     "strings"
     "time"
 
     "github.com/gin-contrib/sessions"
     "github.com/gin-contrib/sessions/cookie"
     "github.com/gin-gonic/gin"
+    "github.com/joho/godotenv"
     "golang.org/x/crypto/bcrypt"
 )
 
-// ------------------------------
+// ======================================================
 // 1. 전역 설정
-// ------------------------------
+// ======================================================
 
 type User struct {
     Email    string
@@ -35,77 +37,16 @@ var users = make(map[string]*User)
 
 const accountFile = ".account"
 
-// docker-compose-list 디렉토리
+// docker-compose 파일이 저장될 디렉토리
 var baseDir = "./docker-compose-list"
 
-// 백업 파일 디렉토리 (여기서는 전역 사용)
-var backupDir = "./backups"
+// 데몬 동작 시 사용하는 PID/로그 파일
+const pidFile = "dc_webconsole.pid"
+const logFile = "dc_webconsole.log"
 
-const serverPort = ":15500"
-
-func main() {
-    // 사용자 로드
-    if err := loadAccounts(); err != nil {
-        log.Println("사용자 정보 로드 오류:", err)
-    }
-
-    // 디렉토리 준비
-    if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-        os.Mkdir(baseDir, 0755)
-    }
-    if _, err := os.Stat(backupDir); os.IsNotExist(err) {
-        os.Mkdir(backupDir, 0755)
-    }
-
-    // Gin 설정
-    r := gin.Default()
-
-    // 템플릿 로딩: templates/*.html
-    r.LoadHTMLGlob("templates/*.html")
-
-    // 세션
-    store := cookie.NewStore([]byte("secret"))
-    r.Use(sessions.Sessions("mysession", store))
-
-    // (A) 로그인 필요 없는 라우트
-    r.GET("/", landingPage)        // 랜딩 페이지 (로그인 폼 + 회원가입 버튼)
-    r.POST("/login", doLogin)      // 로그인 처리
-    r.GET("/register", showRegister)
-    r.POST("/register", doRegister)
-
-    // (B) 로그인 필요한 라우트
-    auth := r.Group("/")
-    auth.Use(AuthRequired())
-    {
-        // 웹콘솔 페이지
-        auth.GET("/console", consolePage)
-        // 디렉토리/파일 관련 AJAX
-        auth.GET("/console/api/dir", listDirectoriesAPI)
-        auth.GET("/console/api/files", listFilesAPI)
-        auth.GET("/console/api/file", getFileContentAPI)
-        auth.POST("/console/api/file", saveFileAPI)
-        auth.POST("/console/api/restart", restartDockerAPI)
-        auth.GET("/console/api/backups", listBackupsAPI)
-        auth.GET("/console/api/backup/download", downloadBackupAPI)
-        auth.POST("/console/api/backup/rollback", rollbackFileAPI)
-        auth.POST("/console/api/dir/create", createDirectoryAPI)
-        auth.POST("/console/api/file/create", createFileAPI)
-
-        // 어드민 페이지
-        auth.GET("/console/admin", adminOnly(adminPage))
-        auth.POST("/console/admin/role", adminOnly(updateUserRole))
-
-        // 로그아웃
-        auth.GET("/logout", doLogout)
-    }
-
-    log.Printf("서버가 포트 %s 로 시작됩니다.\n", serverPort)
-    r.Run(serverPort)
-}
-
-// ------------------------------
-// 2. .account 로드/저장
-// ------------------------------
+// ======================================================
+// 2. 계정(.account) 로드/저장
+// ======================================================
 
 func loadAccounts() error {
     f, err := os.Open(accountFile)
@@ -156,17 +97,14 @@ func createUser(email, hashedPwd, role string) error {
     return saveAccounts()
 }
 
-// ------------------------------
+// ======================================================
 // 3. Landing Page & 로그인/회원가입
-// ------------------------------
+// ======================================================
 
-// 랜딩 페이지
 func landingPage(c *gin.Context) {
-    // templates/landing.html 렌더링
     c.HTML(http.StatusOK, "landing.html", nil)
 }
 
-// 로그인 처리
 func doLogin(c *gin.Context) {
     email := c.PostForm("email")
     pw := c.PostForm("password")
@@ -176,6 +114,7 @@ func doLogin(c *gin.Context) {
         c.String(http.StatusUnauthorized, "등록되지 않은 이메일입니다.")
         return
     }
+    // 비밀번호 검증
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(pw)); err != nil {
         c.String(http.StatusUnauthorized, "비밀번호가 일치하지 않습니다.")
         return
@@ -185,17 +124,14 @@ func doLogin(c *gin.Context) {
     sess.Set("user_email", email)
     sess.Save()
 
-    // 로그인 후 /console 로 이동
+    // 로그인 후 콘솔 페이지로 이동
     c.Redirect(http.StatusFound, "/console")
 }
 
-// 회원가입 폼
 func showRegister(c *gin.Context) {
-    // templates/register.html
     c.HTML(http.StatusOK, "register.html", nil)
 }
 
-// 회원가입 처리
 func doRegister(c *gin.Context) {
     email := c.PostForm("email")
     pw := c.PostForm("password")
@@ -220,6 +156,7 @@ func doRegister(c *gin.Context) {
         return
     }
 
+    // 첫 회원이 아니면 어드민에게 알림 (예시 로그)
     if role != "admin" {
         log.Printf("[이메일 발송] 신규 회원(%s) 가입! 어드민 권한 부여 필요.\n", email)
     }
@@ -229,13 +166,12 @@ func doRegister(c *gin.Context) {
     sess.Set("user_email", email)
     sess.Save()
 
-    // /console 이동
     c.Redirect(http.StatusFound, "/console")
 }
 
-// ------------------------------
+// ======================================================
 // 4. 인증/인가 미들웨어
-// ------------------------------
+// ======================================================
 
 func AuthRequired() gin.HandlerFunc {
     return func(c *gin.Context) {
@@ -249,7 +185,6 @@ func AuthRequired() gin.HandlerFunc {
     }
 }
 
-// 로그아웃
 func doLogout(c *gin.Context) {
     sess := sessions.Default(c)
     sess.Clear()
@@ -274,10 +209,9 @@ func isAdmin(u *User) bool {
     return u != nil && u.Role == "admin"
 }
 
-// ------------------------------
+// ======================================================
 // 5. 도커 컴포즈 웹콘솔 (/console)
-// ------------------------------
-
+// ======================================================
 
 func consolePage(c *gin.Context) {
     user := currentUser(c)
@@ -285,16 +219,13 @@ func consolePage(c *gin.Context) {
         c.Redirect(http.StatusFound, "/")
         return
     }
-    // templates/console.html 파일에 넘길 데이터
     data := gin.H{
         "Email":   user.Email,
         "Role":    user.Role,
         "IsAdmin": isAdmin(user),
     }
-    // 여기서 "console.html"은 templates/console.html 내에 있는 파일 이름
     c.HTML(http.StatusOK, "console.html", data)
 }
-
 
 // 디렉토리 목록 (AJAX)
 func listDirectoriesAPI(c *gin.Context) {
@@ -334,7 +265,7 @@ func listFilesAPI(c *gin.Context) {
     c.JSON(http.StatusOK, files)
 }
 
-// 파일 내용 (AJAX)
+// 파일 내용 가져오기
 func getFileContentAPI(c *gin.Context) {
     p := c.Query("path")
     if p == "" {
@@ -350,7 +281,7 @@ func getFileContentAPI(c *gin.Context) {
     c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
 }
 
-// 파일 저장 (AJAX)
+// 파일 저장 (백업 후 저장, 필요 시 도커 재시작)
 func saveFileAPI(c *gin.Context) {
     p := c.PostForm("path")
     content := c.PostForm("content")
@@ -360,17 +291,20 @@ func saveFileAPI(c *gin.Context) {
         return
     }
     fullPath := filepath.Join(baseDir, p)
-    // 백업
+
+    // 저장 전 백업
     if err := backupFile(fullPath); err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("백업 실패: %v", err))
         return
     }
-    // 저장
+    // 새 내용 저장
     if err := ioutil.WriteFile(fullPath, []byte(content), 0644); err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("저장 실패: %v", err))
         return
     }
+
     msg := "저장 완료!"
+    // 도커 재시작
     if doRestart == "1" {
         out, err := dockerComposeRestart(fullPath)
         if err != nil {
@@ -382,7 +316,7 @@ func saveFileAPI(c *gin.Context) {
     c.String(http.StatusOK, msg)
 }
 
-// 도커 재시작 (AJAX)
+// 도커 재시작
 func restartDockerAPI(c *gin.Context) {
     p := c.PostForm("path")
     if p == "" {
@@ -398,31 +332,117 @@ func restartDockerAPI(c *gin.Context) {
     c.String(http.StatusOK, "도커 재시작 완료!")
 }
 
-// 백업 목록 (AJAX)
+// ------------------------------------------------------
+// 6. 백업 로직 (각 디렉토리에 backups/ 폴더)
+// ------------------------------------------------------
+
+func backupFile(filePath string) error {
+    // 원본 파일 읽기
+    data, err := ioutil.ReadFile(filePath)
+    if err != nil {
+        return err
+    }
+
+    // (1) 파일이 있는 디렉토리 내 "backups" 폴더 생성 (없으면)
+    dirName := filepath.Dir(filePath)
+    localBackupDir := filepath.Join(dirName, "backups")
+    if _, err := os.Stat(localBackupDir); os.IsNotExist(err) {
+        if err := os.MkdirAll(localBackupDir, 0755); err != nil {
+            return fmt.Errorf("백업 디렉토리 생성 오류: %v", err)
+        }
+    }
+
+    // (2) 백업 파일 이름: [기존파일명_yyyyMMdd_HHmmss.확장자]
+    fileName := filepath.Base(filePath)
+    ext := filepath.Ext(fileName)
+    base := fileName[0 : len(fileName)-len(ext)]
+    timestamp := time.Now().Format("20060102_150405")
+    backupName := fmt.Sprintf("%s_%s%s", base, timestamp, ext)
+    backupPath := filepath.Join(localBackupDir, backupName)
+
+    // (3) 백업 파일로 저장
+    if err := ioutil.WriteFile(backupPath, data, 0644); err != nil {
+        return fmt.Errorf("백업 파일 저장 오류: %v", err)
+    }
+
+    // (4) 백업 정리 (최대 20개)
+    return pruneBackups(localBackupDir, base, ext, 20)
+}
+
+// pruneBackups: localBackupDir에 있는 특정 파일(base+확장자)의 백업이 20개 초과하면 오래된 것부터 삭제
+func pruneBackups(localBackupDir, base, ext string, max int) error {
+    files, err := ioutil.ReadDir(localBackupDir)
+    if err != nil {
+        return err
+    }
+
+    var backups []os.FileInfo
+    prefix := base + "_"
+    for _, f := range files {
+        if !f.IsDir() && strings.HasPrefix(f.Name(), prefix) && strings.HasSuffix(f.Name(), ext) {
+            backups = append(backups, f)
+        }
+    }
+
+    // 수정시간 기준 오름차순 정렬(가장 오래된 것이 맨 앞)
+    sort.Slice(backups, func(i, j int) bool {
+        return backups[i].ModTime().Before(backups[j].ModTime())
+    })
+
+    // max 개수 초과분 삭제
+    if len(backups) > max {
+        for _, f := range backups[:len(backups)-max] {
+            os.Remove(filepath.Join(localBackupDir, f.Name()))
+        }
+    }
+    return nil
+}
+
+// ------------------------------------------------------
+// 7. 백업 목록, 다운로드, 롤백
+// ------------------------------------------------------
+
+// 백업 목록
 func listBackupsAPI(c *gin.Context) {
-    p := c.Query("path")
+    p := c.Query("path") // 예: testtt/aaa.yml
     if p == "" {
         c.String(http.StatusBadRequest, "path 필요")
         return
     }
-    fileName := filepath.Base(p)
+    fullPath := filepath.Join(baseDir, p)
+
+    // 파일명에서 base / ext 추출
+    fileName := filepath.Base(fullPath)
     ext := filepath.Ext(fileName)
     base := fileName[0 : len(fileName)-len(ext)]
 
-    files, err := ioutil.ReadDir(backupDir)
+    // 해당 파일 디렉토리의 backups 폴더
+    dirName := filepath.Dir(fullPath)
+    localBackupDir := filepath.Join(dirName, "backups")
+
+    // backups 폴더 없으면 목록 없음
+    if _, err := os.Stat(localBackupDir); os.IsNotExist(err) {
+        c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("<h3>백업 목록</h3><p>백업 없음</p>"))
+        return
+    }
+
+    files, err := ioutil.ReadDir(localBackupDir)
     if err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("백업 디렉토리 오류: %v", err))
         return
     }
+
     var sb strings.Builder
     sb.WriteString("<h3>백업 목록</h3><ul>")
     for _, f := range files {
         if !f.IsDir() && strings.HasPrefix(f.Name(), base+"_") {
+            // 다운로드/롤백 링크를 만들어서 반환
             sb.WriteString(fmt.Sprintf(`
-            <li>%s
-              <a href="/console/api/backup/download?backupfile=%s" target="_blank">[다운로드]</a>
-              <button onclick="rollbackBackup('%s')">롤백</button>
-            </li>`, f.Name(), f.Name(), f.Name()))
+<li>%s
+  <a href="/console/api/backup/download?backupfile=%s&target=%s" target="_blank">[다운로드]</a>
+  <button onclick="rollbackBackup('%s')">롤백</button>
+</li>
+`, f.Name(), f.Name(), p, f.Name()))
         }
     }
     sb.WriteString("</ul>")
@@ -431,51 +451,76 @@ func listBackupsAPI(c *gin.Context) {
 
 // 백업 다운로드
 func downloadBackupAPI(c *gin.Context) {
-    bf := c.Query("backupfile")
-    if bf == "" {
-        c.String(http.StatusBadRequest, "backupfile 필요")
+    bf := c.Query("backupfile") // 예: aaa_20250301_120000.yml
+    target := c.Query("target") // 예: testtt/aaa.yml
+    if bf == "" || target == "" {
+        c.String(http.StatusBadRequest, "backupfile, target 모두 필요")
         return
     }
-    backupPath := filepath.Join(backupDir, bf)
+
+    // target 파일의 디렉토리에 있는 backups 폴더
+    fullPath := filepath.Join(baseDir, target)
+    dirName := filepath.Dir(fullPath)
+    localBackupDir := filepath.Join(dirName, "backups")
+    backupPath := filepath.Join(localBackupDir, bf)
+
     f, err := os.Open(backupPath)
     if err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("백업 파일 열기 실패: %v", err))
         return
     }
     defer f.Close()
+
     c.Header("Content-Disposition", "attachment; filename="+bf)
     c.Header("Content-Type", "application/octet-stream")
     io.Copy(c.Writer, f)
 }
 
-// 롤백
 func rollbackFileAPI(c *gin.Context) {
-    bf := c.PostForm("backupfile")
-    target := c.PostForm("target")
+    bf := c.PostForm("backupfile")  // ex) aaa_20250301_235959.yml
+    target := c.PostForm("target")  // ex) testtt/aaa.yml
     if bf == "" || target == "" {
         c.String(http.StatusBadRequest, "backupfile, target 모두 필요")
         return
     }
-    backupPath := filepath.Join(backupDir, bf)
+
+    // target 파일 경로 및 backupPath
+    fullPath := filepath.Join(baseDir, target)
+    dirName := filepath.Dir(fullPath)
+    localBackupDir := filepath.Join(dirName, "backups")
+    backupPath := filepath.Join(localBackupDir, bf)
+
+    // ========== 1) 롤백 전, 현재 파일을 새로 백업해 둔다. ==========
+    if err := backupFile(fullPath); err != nil {
+        c.String(http.StatusInternalServerError, fmt.Sprintf("롤백 실패(현재 파일 백업 중 오류): %v", err))
+        return
+    }
+
+    // ========== 2) 과거 백업본(rollback 대상)을 읽어서, 현재 파일에 덮어쓰기 ==========
     data, err := ioutil.ReadFile(backupPath)
     if err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("백업 파일 읽기 실패: %v", err))
         return
     }
-    fullPath := filepath.Join(baseDir, target)
     if err := ioutil.WriteFile(fullPath, data, 0644); err != nil {
-        c.String(http.StatusInternalServerError, fmt.Sprintf("롤백 실패: %v", err))
+        c.String(http.StatusInternalServerError, fmt.Sprintf("롤백 실패(덮어쓰기 오류): %v", err))
         return
     }
+
+    // ========== 3) Docker Compose 재시작 ==========
     out, err := dockerComposeRestart(fullPath)
     if err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("도커 재시작 오류: %v\n출력:%s", err, out))
         return
     }
-    c.String(http.StatusOK, "롤백 및 도커 재시작 완료!")
+
+    c.String(http.StatusOK, "롤백(현재 상태 백업 후 과거 버전 복원) 및 도커 재시작 완료!")
 }
 
-// 디렉토리 생성 (AJAX)
+// ------------------------------------------------------
+// 8. 디렉토리/파일 생성
+// ------------------------------------------------------
+
 func createDirectoryAPI(c *gin.Context) {
     dirname := c.PostForm("dirname")
     if dirname == "" {
@@ -494,7 +539,6 @@ func createDirectoryAPI(c *gin.Context) {
     c.String(http.StatusOK, "디렉토리 생성 완료!")
 }
 
-// 파일 생성 (AJAX)
 func createFileAPI(c *gin.Context) {
     dir := c.PostForm("dir")
     filename := c.PostForm("filename")
@@ -508,7 +552,7 @@ func createFileAPI(c *gin.Context) {
         c.String(http.StatusBadRequest, "이미 존재하는 파일")
         return
     }
-    // 초기 내용 없이 생성
+    // 빈 파일 생성
     if err := ioutil.WriteFile(target, []byte(""), 0644); err != nil {
         c.String(http.StatusInternalServerError, fmt.Sprintf("파일 생성 오류: %v", err))
         return
@@ -516,13 +560,11 @@ func createFileAPI(c *gin.Context) {
     c.String(http.StatusOK, fmt.Sprintf("파일 생성 완료: %s", filename))
 }
 
-// ------------------------------
-// 6. 어드민 페이지 (/console/admin)
-// ------------------------------
+// ------------------------------------------------------
+// 9. 어드민 페이지 (/console/admin)
+// ------------------------------------------------------
 
 func adminPage(c *gin.Context) {
-    // templates/admin.html 에 사용자 목록, 권한 변경
-    // 데이터: user 목록
     var userList []map[string]string
     for _, u := range users {
         userList = append(userList, map[string]string{
@@ -552,9 +594,6 @@ func updateUserRole(c *gin.Context) {
     c.String(http.StatusOK, "권한이 업데이트되었습니다. <a href='/console/admin'>돌아가기</a>")
 }
 
-
-// adminOnly: 현재 사용자(세션)에게 admin 권한이 있는지 확인.
-// 없다면 403 Forbidden 처리
 func adminOnly(fn gin.HandlerFunc) gin.HandlerFunc {
     return func(c *gin.Context) {
         u := currentUser(c)
@@ -563,58 +602,15 @@ func adminOnly(fn gin.HandlerFunc) gin.HandlerFunc {
             c.Abort()
             return
         }
-        // admin 권한이 있다면 핸들러 실행
         fn(c)
     }
 }
 
+// ------------------------------------------------------
+// 10. Docker Compose 재시작 로직
+// ------------------------------------------------------
 
-
-// ------------------------------
-// 7. 백업 & 도커 재시작
-// ------------------------------
-
-func backupFile(filePath string) error {
-    data, err := ioutil.ReadFile(filePath)
-    if err != nil {
-        return err
-    }
-    fileName := filepath.Base(filePath)
-    ext := filepath.Ext(fileName)
-    base := fileName[0 : len(fileName)-len(ext)]
-    timestamp := time.Now().Format("20060102_150405")
-    backupName := fmt.Sprintf("%s_%s%s", base, timestamp, ext)
-    backupPath := filepath.Join(backupDir, backupName)
-    if err := ioutil.WriteFile(backupPath, data, 0644); err != nil {
-        return err
-    }
-    return pruneBackups(base, ext, 20)
-}
-
-func pruneBackups(base, ext string, max int) error {
-    files, err := ioutil.ReadDir(backupDir)
-    if err != nil {
-        return err
-    }
-    var backups []os.FileInfo
-    prefix := base + "_"
-    for _, f := range files {
-        if !f.IsDir() && strings.HasPrefix(f.Name(), prefix) && strings.HasSuffix(f.Name(), ext) {
-            backups = append(backups, f)
-        }
-    }
-    sort.Slice(backups, func(i, j int) bool {
-        return backups[i].ModTime().Before(backups[j].ModTime())
-    })
-    if len(backups) > max {
-        for _, f := range backups[:len(backups)-max] {
-            os.Remove(filepath.Join(backupDir, f.Name()))
-        }
-    }
-    return nil
-}
-
-// docker-compose -f [파일] down; sleep 2; up -d
+// dockerComposeRestart: "docker-compose -f [파일] down; sleep 2; up -d" 실행
 func dockerComposeRestart(filePath string) (string, error) {
     dir := filepath.Dir(filePath)
     fileBase := filepath.Base(filePath)
@@ -635,5 +631,181 @@ func dockerComposeRestart(filePath string) (string, error) {
     outUp, errUp := cmdUp.CombinedOutput()
 
     return string(outDown) + "\n" + string(outUp), errUp
+}
+
+// ------------------------------------------------------
+// 11. 서버 실행 함수 (runServer)
+// ------------------------------------------------------
+
+func runServer() {
+    // .env 로드
+    if err := godotenv.Load(".env"); err != nil {
+        log.Printf("[경고] .env 파일을 찾지 못했거나 로드 오류: %v", err)
+    }
+
+    // 포트 설정
+    portStr := os.Getenv("port")
+    if portStr == "" {
+        portStr = "15500"
+    }
+    serverPort := ":" + portStr
+
+    // 사용자 로드
+    if err := loadAccounts(); err != nil {
+        log.Println("사용자 정보 로드 오류:", err)
+    }
+
+    // 디렉토리 준비
+    if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+        os.Mkdir(baseDir, 0755)
+    }
+
+    // Gin 설정
+    r := gin.Default()
+    r.LoadHTMLGlob("templates/*.html")
+
+    // 세션
+    store := cookie.NewStore([]byte("secret"))
+    r.Use(sessions.Sessions("mysession", store))
+
+    // 로그인 불필요 라우트
+    r.GET("/", landingPage)
+    r.POST("/login", doLogin)
+    r.GET("/register", showRegister)
+    r.POST("/register", doRegister)
+
+    // 로그인 필요한 라우트
+    auth := r.Group("/")
+    auth.Use(AuthRequired())
+    {
+        auth.GET("/console", consolePage)
+
+        // 디렉토리/파일/백업
+        auth.GET("/console/api/dir", listDirectoriesAPI)
+        auth.GET("/console/api/files", listFilesAPI)
+        auth.GET("/console/api/file", getFileContentAPI)
+        auth.POST("/console/api/file", saveFileAPI)
+        auth.POST("/console/api/restart", restartDockerAPI)
+        auth.GET("/console/api/backups", listBackupsAPI)
+        auth.GET("/console/api/backup/download", downloadBackupAPI)
+        auth.POST("/console/api/backup/rollback", rollbackFileAPI)
+        auth.POST("/console/api/dir/create", createDirectoryAPI)
+        auth.POST("/console/api/file/create", createFileAPI)
+
+        // 어드민
+        auth.GET("/console/admin", adminOnly(adminPage))
+        auth.POST("/console/admin/role", adminOnly(updateUserRole))
+
+        // 로그아웃
+        auth.GET("/logout", doLogout)
+    }
+
+    log.Printf("서버가 포트 %s 로 시작됩니다.\n", serverPort)
+    if err := r.Run(serverPort); err != nil {
+        log.Fatalf("서버 실행 중 오류: %v", err)
+    }
+}
+
+// ------------------------------------------------------
+// 12. 데몬/런타임 제어 (start|stop|run)
+// ------------------------------------------------------
+
+func main() {
+    if len(os.Args) < 2 {
+        fmt.Println("사용법: dc_webconsole <start|stop|run>")
+        return
+    }
+    cmd := os.Args[1]
+
+    switch cmd {
+    case "start":
+        startDaemon()
+    case "stop":
+        stopDaemon()
+    case "run":
+        // 포그라운드 실행
+        runServer()
+    default:
+        fmt.Printf("알 수 없는 명령어: %s\n", cmd)
+        fmt.Println("사용법: dc_webconsole <start|stop|run>")
+    }
+}
+
+// startDaemon: 백그라운드(데몬)로 서버 실행
+func startDaemon() {
+    // 중복 실행 방지
+    if _, err := os.Stat(pidFile); err == nil {
+        fmt.Printf("이미 '%s' 파일이 존재합니다. 서버가 실행 중인지 확인해주세요.\n", pidFile)
+        return
+    }
+
+    // 현재 실행파일 경로
+    exePath, err := os.Executable()
+    if err != nil {
+        fmt.Println("실행파일 경로를 가져올 수 없습니다.", err)
+        return
+    }
+
+    // "run" 모드로 자기 자신을 백그라운드 실행
+    cmd := exec.Command(exePath, "run")
+
+    // 로그 파일
+    f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+    if err != nil {
+        fmt.Println("로그 파일을 열 수 없습니다.", err)
+        return
+    }
+    defer f.Close()
+
+    cmd.Stdout = f
+    cmd.Stderr = f
+
+    // 비동기 시작
+    if err := cmd.Start(); err != nil {
+        fmt.Println("서버 데몬 실행 실패:", err)
+        return
+    }
+
+    // PID 파일 기록
+    pid := cmd.Process.Pid
+    if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
+        fmt.Println("PID 파일 생성 실패:", err)
+        return
+    }
+
+    fmt.Printf("서버가 데몬으로 시작되었습니다. (PID: %d)\n", pid)
+    fmt.Printf("로그: %s\n", logFile)
+}
+
+// stopDaemon: pidFile을 읽어 프로세스 종료
+func stopDaemon() {
+    data, err := ioutil.ReadFile(pidFile)
+    if err != nil {
+        fmt.Printf("PID 파일('%s')을 읽을 수 없습니다: %v\n", pidFile, err)
+        return
+    }
+    pidStr := strings.TrimSpace(string(data))
+    pid, err := strconv.Atoi(pidStr)
+    if err != nil {
+        fmt.Println("PID 파일이 올바르지 않습니다:", err)
+        return
+    }
+
+    proc, err := os.FindProcess(pid)
+    if err != nil {
+        fmt.Printf("PID %d 프로세스를 찾을 수 없습니다: %v\n", pid, err)
+        return
+    }
+
+    // 프로세스 종료
+    if err := proc.Kill(); err != nil {
+        fmt.Printf("PID %d 프로세스를 종료하는 중 오류: %v\n", pid, err)
+        return
+    }
+
+    // 종료 후 pidFile 삭제
+    os.Remove(pidFile)
+
+    fmt.Printf("서버가 중지되었습니다. (PID: %d)\n", pid)
 }
 

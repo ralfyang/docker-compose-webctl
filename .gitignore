@@ -1,4 +1,6 @@
 .account
 .list
-backups/
+.env
 docker-compose-list/
+dc_webconsole.log
+dc_webconsole.pid

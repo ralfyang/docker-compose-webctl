@@ -21,7 +21,7 @@
 </head>
 <body>
 
-<!-- 우측 상단 어드민 버튼 (조건부 표시) -->
+<!-- 우측 상단 어드민 버튼 -->
 <div class="admin-btn">
   {{if .IsAdmin}}
     <a href="/console/admin" style="padding:5px; background:#ccc;">어드민 페이지</a>
@@ -66,7 +66,7 @@
     <div id="fileList"></div>
   </div>
 
-  <!-- 에디터 -->
+  <!-- 파일 편집/백업 -->
   <div class="box">
     <h2>파일 편집</h2>
     <p>현재 파일: <span id="currentFileLabel"></span></p>
@@ -102,10 +102,11 @@ async function loadDirList() {
   document.getElementById("dirList").innerHTML = html;
 }
 
+// 디렉토리 선택
 function selectDir(dirName) {
   currentDir = dirName;
   document.getElementById("currentDirLabel").textContent = dirName;
-  // 파일 목록 리셋
+  // 파일 목록/편집영역 초기화
   currentFile = "";
   document.getElementById("currentFileLabel").textContent = "";
   document.getElementById("editor").value = "";
@@ -128,6 +129,7 @@ async function loadFileList(dirName) {
   document.getElementById("fileList").innerHTML = html;
 }
 
+// 파일 선택
 function selectFile(f) {
   currentFile = f;
   document.getElementById("currentFileLabel").textContent = f;
@@ -191,7 +193,7 @@ async function createFile() {
   }
 }
 
-// 파일 저장 (restart 여부)
+// 파일 저장
 async function saveFile(doRestart) {
   if(!currentFile) {
     alert("파일이 선택되지 않았습니다.");
@@ -224,15 +226,16 @@ async function loadBackups() {
     return;
   }
   let html = await resp.text();
+  // 서버가 생성해주는 HTML (각 백업에 대해 다운로드/롤백 링크 포함)
   document.getElementById("backupList").innerHTML = html;
 }
 
-// 백업 롤백 (console.html 상에는 버튼이 없지만, 백업 목록에 inline 버튼)
+// 백업 롤백
 function rollbackBackup(bf) {
   if(!confirm("해당 백업으로 롤백하시겠습니까?")) return;
   let form = new FormData();
   form.append("backupfile", bf);
-  form.append("target", currentFile);
+  form.append("target", currentFile); 
   fetch("/console/api/backup/rollback", {method:"POST", body:form})
   .then(resp => {
     if(!resp.ok) { throw new Error("롤백 실패"); }
@@ -240,6 +243,7 @@ function rollbackBackup(bf) {
   })
   .then(msg => {
     alert(msg);
+    // 롤백이 성공하면, 최신 파일 내용을 다시 로드해서 에디터에 갱신
     loadFileContent(currentFile);
   })
   .catch(err => alert(err));
