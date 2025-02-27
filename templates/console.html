@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>도커 컴포즈 웹콘솔</title>
+  <style>
+    body { margin:20px; font-family:Arial,sans-serif; position:relative; }
+    .admin-btn {
+      position:absolute; top:10px; right:10px;
+    }
+    .logout-btn {
+      position:absolute; bottom:10px; right:10px;
+    }
+    .container { margin-top:40px; }
+    .box { border:1px solid #ccc; padding:10px; margin-bottom:10px; }
+    .list-item { cursor:pointer; padding:5px; }
+    .list-item:hover { background:#eee; }
+    textarea { width:100%; height:200px; }
+    .msg { color:red; }
+  </style>
+</head>
+<body>
+
+<!-- 우측 상단 어드민 버튼 (조건부 표시) -->
+<div class="admin-btn">
+  {{if .IsAdmin}}
+    <a href="/console/admin" style="padding:5px; background:#ccc;">어드민 페이지</a>
+  {{else}}
+    <span class="msg">관리자 권한이 필요합니다</span>
+  {{end}}
+</div>
+
+<!-- 오른쪽 하단 로그아웃 버튼 -->
+<div class="logout-btn">
+  <a href="/logout" style="padding:5px; background:#ccc;">로그아웃</a>
+</div>
+
+<div class="container">
+  <h1>도커 컴포즈 웹콘솔</h1>
+  <p>현재 사용자: {{.Email}} ({{.Role}})</p>
+
+  <!-- 디렉토리 생성 -->
+  <div class="box">
+    <h2>디렉토리 생성</h2>
+    <input type="text" id="newDirName" placeholder="새 디렉토리명" />
+    <button onclick="createDirectory()">생성</button>
+  </div>
+
+  <!-- 디렉토리 목록 -->
+  <div class="box">
+    <h2>디렉토리 목록</h2>
+    <div id="dirList"></div>
+  </div>
+
+  <!-- 파일 생성 -->
+  <div class="box">
+    <h2>파일 생성</h2>
+    <p>현재 디렉토리: <span id="currentDirLabel"></span></p>
+    <input type="text" id="newFileName" placeholder="새 파일명 (예: docker-compose.yml)" />
+    <button onclick="createFile()">생성</button>
+  </div>
+
+  <!-- 파일 목록 -->
+  <div class="box">
+    <h2>파일 목록</h2>
+    <div id="fileList"></div>
+  </div>
+
+  <!-- 에디터 -->
+  <div class="box">
+    <h2>파일 편집</h2>
+    <p>현재 파일: <span id="currentFileLabel"></span></p>
+    <textarea id="editor"></textarea><br/>
+    <button onclick="saveFile(false)">저장</button>
+    <button onclick="saveFile(true)">저장 & 리스타트</button>
+    <button onclick="loadBackups()">백업 목록</button>
+    <div id="backupList"></div>
+  </div>
+</div>
+
+<script>
+let currentDir = "";
+let currentFile = "";
+
+// 페이지 로드 시 디렉토리 목록 로딩
+window.onload = function() {
+  loadDirList();
+};
+
+// 디렉토리 목록 로드
+async function loadDirList() {
+  let resp = await fetch("/console/api/dir");
+  if(!resp.ok) {
+    alert("디렉토리 목록 로드 실패");
+    return;
+  }
+  let dirs = await resp.json();
+  let html = "";
+  dirs.forEach(d => {
+    html += `<div class="list-item" onclick="selectDir('${d}')">${d}</div>`;
+  });
+  document.getElementById("dirList").innerHTML = html;
+}
+
+function selectDir(dirName) {
+  currentDir = dirName;
+  document.getElementById("currentDirLabel").textContent = dirName;
+  // 파일 목록 리셋
+  currentFile = "";
+  document.getElementById("currentFileLabel").textContent = "";
+  document.getElementById("editor").value = "";
+  document.getElementById("backupList").innerHTML = "";
+  loadFileList(dirName);
+}
+
+// 파일 목록 로드
+async function loadFileList(dirName) {
+  let resp = await fetch("/console/api/files?dir=" + encodeURIComponent(dirName));
+  if(!resp.ok) {
+    alert("파일 목록 로드 실패");
+    return;
+  }
+  let files = await resp.json();
+  let html = "";
+  files.forEach(f => {
+    html += `<div class="list-item" onclick="selectFile('${f}')">${f}</div>`;
+  });
+  document.getElementById("fileList").innerHTML = html;
+}
+
+function selectFile(f) {
+  currentFile = f;
+  document.getElementById("currentFileLabel").textContent = f;
+  document.getElementById("editor").value = "";
+  document.getElementById("backupList").innerHTML = "";
+  loadFileContent(f);
+}
+
+// 파일 내용 로드
+async function loadFileContent(filePath) {
+  let resp = await fetch("/console/api/file?path=" + encodeURIComponent(filePath));
+  if(!resp.ok) {
+    alert("파일 로드 실패");
+    return;
+  }
+  let text = await resp.text();
+  document.getElementById("editor").value = text;
+}
+
+// 디렉토리 생성
+async function createDirectory() {
+  let dirName = document.getElementById("newDirName").value.trim();
+  if(!dirName) {
+    alert("디렉토리명을 입력하세요");
+    return;
+  }
+  let form = new FormData();
+  form.append("dirname", dirName);
+  let resp = await fetch("/console/api/dir/create", {method:"POST", body:form});
+  if(resp.ok) {
+    alert("디렉토리 생성 완료!");
+    document.getElementById("newDirName").value = "";
+    loadDirList();
+  } else {
+    alert("디렉토리 생성 실패");
+  }
+}
+
+// 파일 생성
+async function createFile() {
+  if(!currentDir) {
+    alert("디렉토리를 먼저 선택하세요");
+    return;
+  }
+  let fileName = document.getElementById("newFileName").value.trim();
+  if(!fileName) {
+    alert("파일명을 입력하세요");
+    return;
+  }
+  let form = new FormData();
+  form.append("dir", currentDir);
+  form.append("filename", fileName);
+  let resp = await fetch("/console/api/file/create", {method:"POST", body:form});
+  if(resp.ok) {
+    let msg = await resp.text();
+    alert(msg);
+    document.getElementById("newFileName").value = "";
+    loadFileList(currentDir);
+  } else {
+    alert("파일 생성 실패");
+  }
+}
+
+// 파일 저장 (restart 여부)
+async function saveFile(doRestart) {
+  if(!currentFile) {
+    alert("파일이 선택되지 않았습니다.");
+    return;
+  }
+  let content = document.getElementById("editor").value;
+  let form = new FormData();
+  form.append("path", currentFile);
+  form.append("content", content);
+  form.append("restart", doRestart ? "1" : "0");
+  let resp = await fetch("/console/api/file", {method:"POST", body:form});
+  if(resp.ok) {
+    let msg = await resp.text();
+    alert(msg);
+  } else {
+    alert("저장 실패");
+  }
+}
+
+// 백업 목록 로드
+async function loadBackups() {
+  if(!currentFile) {
+    alert("파일이 선택되지 않았습니다.");
+    return;
+  }
+  let url = "/console/api/backups?path=" + encodeURIComponent(currentFile);
+  let resp = await fetch(url);
+  if(!resp.ok) {
+    alert("백업 목록 로드 실패");
+    return;
+  }
+  let html = await resp.text();
+  document.getElementById("backupList").innerHTML = html;
+}
+
+// 백업 롤백 (console.html 상에는 버튼이 없지만, 백업 목록에 inline 버튼)
+function rollbackBackup(bf) {
+  if(!confirm("해당 백업으로 롤백하시겠습니까?")) return;
+  let form = new FormData();
+  form.append("backupfile", bf);
+  form.append("target", currentFile);
+  fetch("/console/api/backup/rollback", {method:"POST", body:form})
+  .then(resp => {
+    if(!resp.ok) { throw new Error("롤백 실패"); }
+    return resp.text();
+  })
+  .then(msg => {
+    alert(msg);
+    loadFileContent(currentFile);
+  })
+  .catch(err => alert(err));
+}
+</script>
+</body>
+</html>
+

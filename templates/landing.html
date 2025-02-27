@@ -1,0 +1,28 @@
+<!-- 랜딩 페이지 (로그인 폼 + 회원가입 버튼) -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>도커 컴포즈 웹콘솔 - 랜딩</title>
+</head>
+<body>
+<div style="text-align:center; margin:50px auto;">
+  <h1>도커 컴포즈 웹콘솔</h1>
+  <form method="POST" action="/login" style="display:inline-block; border:1px solid #ccc; padding:10px;">
+    <div style="margin:5px;">
+      이메일: <input type="email" name="email" required/>
+    </div>
+    <div style="margin:5px;">
+      비밀번호: <input type="password" name="password" required/>
+    </div>
+    <div style="margin:5px;">
+      <input type="submit" value="로그인"/>
+    </div>
+  </form>
+  <p style="margin:20px;">
+    회원이 아니신가요? <a href="/register">회원가입</a>
+  </p>
+</div>
+</body>
+</html>
+

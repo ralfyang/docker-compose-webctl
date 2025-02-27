@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>어드민 페이지</title>
+</head>
+<body>
+<div style="text-align:center; margin:20px;">
+  <h1>어드민 - 사용자 권한 관리</h1>
+  <ul style="list-style:none;">
+    {{range .Users}}
+    <li style="margin:10px;">
+      이메일: {{.Email}}, 권한: {{.Role}}
+      <form style="display:inline;" method="POST" action="/console/admin/role">
+        <input type="hidden" name="email" value="{{.Email}}"/>
+        <select name="role">
+          <option value="none" {{if eq .Role "none"}}selected{{end}}>권한없음</option>
+          <option value="admin" {{if eq .Role "admin"}}selected{{end}}>어드민</option>
+        </select>
+        <input type="submit" value="변경"/>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+  <p><a href="/console">← 돌아가기</a></p>
+</div>
+</body>
+</html>
+
