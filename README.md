@@ -1,63 +1,80 @@
-# Docker-Compose Web Console
+# Docker Compose Web Control
 
-This project provides a **Go (Gin framework)**-based web console to manage **docker-compose** with ease.  
-It allows users to sign up, log in, create/edit configuration files, restart docker-compose services, and back up or roll back changes.
+## Introduction
+Docker Compose Web Control is a tool that allows you to manage Docker Compose files and control the system through a web interface. This application is built using Golang and the Gin framework, featuring simple user authentication and authorization management.
 
 ## Key Features
+- User registration and login functionality
+- The first registered user automatically receives admin privileges
+- Admin can manage user roles via a dedicated interface
+- Manage Docker Compose files within a specific directory
+- Provides a web-based editor for Docker Compose files
+- Automatic backup and version control when saving files (up to 20 versions maintained)
+- Download and rollback functionality for backup files
+- Docker Compose restart functionality (docker-compose down/up)
 
-1. **Sign Up / Log In**  
-   - The very first registered user automatically gains **admin** privileges.  
-   - Subsequent users have `none` privileges until the admin assigns them as `admin`.
+## Project Structure
+```
+.
+├── main.go                # Main application entry point
+├── account.go             # User account management
+├── auth.go                # Authentication and authorization middleware
+├── console.go             # Docker Compose web console
+├── admin.go               # Admin page and role management
+├── backup.go              # File backup and Docker restart logic
+├── templates/             # HTML templates folder
+│   ├── landing.html       # Landing page
+│   ├── console.html       # Docker Compose web console
+│   ├── admin.html         # Admin page
+│   └── register.html      # Registration page
+└── static/                # CSS, JS, and frontend files
+    ├── style.css          # Stylesheet
+    └── app.js             # Client-side logic
+```
 
-2. **Docker-Compose Web Console**  
-   - **Directory Management**: Create directories under `docker-compose-list`.  
-   - **File Management**: Within each directory, create configuration files (e.g., `.yml`).  
-   - **File Editing**: A web-based editor to modify and save files.  
-   - **Save & Restart**: Execute `docker-compose -f [file] down; sleep 2; up -d` to restart containers.
+## Installation & Execution
+### 1. Clone the Project
+```sh
+git clone https://github.com/yourusername/docker-compose-webctl.git
+cd docker-compose-webctl
+```
 
-3. **Backup / Rollback**  
-   - Each file edit triggers a backup (keeping up to 20 versions).  
-   - Users can view a list of backups, then roll back to a chosen version and restart.  
-   - Backup files can be **downloaded** as well.
+### 2. Create Required Directories
+```sh
+mkdir docker-compose-list
+mkdir backups
+```
 
-4. **Admin Page**  
-   - A page to manage user roles (`admin` or `none`).  
-   - The admin page is accessible via a button in the top-right corner of the web console (for admin users only).
+### 3. Install Dependencies
+```sh
+go mod tidy
+```
 
-5. **UI/UX**  
-   - **Landing Page**: A login form with a “Sign Up” button for new users.  
-   - **Automatic Login** after sign-up. The first user is `admin`; others need admin approval for elevated privileges.  
-   - **Web Console**:  
-     - A directory list → select a directory  
-     - A file list → select a file  
-     - An editor for viewing/editing the file content  
-     - “Save” and “Save & Restart” buttons  
-     - Backup list & rollback function  
-     - An **Admin** button (if the user is an admin) at the top-right corner  
-     - A **Logout** button at the bottom-right corner.
+### 4. Run the Server
+```sh
+go run main.go
+```
 
-## Directory Structure
-your-project/ 
-├─ main.go
-└─ templates/
-├─ landing.html # Landing page (login form + sign-up link)
-├─ register.html # Sign-up form
-├─ console.html # Main Docker-Compose Web Console UI
-└─ admin.html # Admin page (user role management)
+The server will run at `http://localhost:15500` by default.
 
+## How to Use
+1. Open `http://localhost:15500` in your web browser
+2. Register and log in
+3. Create, edit, backup, and rollback Docker Compose files via the web console
+4. Manage user roles through the admin interface (admin-only)
 
-- **`main.go`**:  
-  - The Go + Gin server  
-  - Routing (login, sign-up, `/console`, `/console/api/*`, etc.)  
-  - Invokes `docker-compose` via `exec.Command("docker-compose", ...)`  
-  - Manages file backups, rollback, and user authentication
+## Caution
+- Only access files within the `./docker-compose-list` directory.
+- Server must run with sufficient permissions as sudo is required for certain operations.
+- A maximum of 20 backup files are maintained; older files are automatically deleted.
 
-- **`templates/`** folder:  
-  - Contains all HTML templates  
-  - Loaded with `r.LoadHTMLGlob("templates/*.html")` in `main.go`  
-  - Rendered via `c.HTML(...)`
+## Contribution
+1. Fork the repository
+2. Create a new branch (`git checkout -b feature/new-feature`)
+3. Commit changes (`git commit -m 'Add new feature'`)
+4. Push the branch (`git push origin feature/new-feature`)
+5. Create a Pull Request
 
-1. **Clone** the repository:
-   ```bash
-   git clone https://github.com/username/docker-compose-webctl.git
-   cd docker-compose-webctl
+## License
+This project is licensed under the MIT License.
+
