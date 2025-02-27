@@ -4,7 +4,8 @@ Below is an **English README.md** version incorporating the latest changes, incl
 
 # Docker Compose Web Control
 
-![image](https://github.com/user-attachments/assets/e145d51e-2134-4e3d-bc2b-664be171ea14)
+<img width="947" alt="image" src="https://github.com/user-attachments/assets/000bb175-8a35-4202-abc6-647770b12836" />
+
 
 ## Introduction
 **Docker Compose Web Control** is a Golang-based web interface that makes it easy to manage your Docker Compose files, including creating/editing files, saving automatic backups, rolling back to previous versions, and restarting Docker Compose services. It features straightforward user authentication, including admin role management.
