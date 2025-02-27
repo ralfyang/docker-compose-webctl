@@ -5,7 +5,8 @@
 
 # Docker Compose Web Control
 
-![image](https://github.com/user-attachments/assets/e145d51e-2134-4e3d-bc2b-664be171ea14)
+<img width="947" alt="image" src="https://github.com/user-attachments/assets/000bb175-8a35-4202-abc6-647770b12836" />
+
 
 ## 소개
 **Docker Compose Web Control**은 웹 브라우저로 Docker Compose 파일을 손쉽게 관리하고, 작업 내용을 백업/롤백하며, Docker Compose를 재시작할 수 있도록 해주는 도구입니다.  
