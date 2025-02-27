@@ -48,17 +48,20 @@ const logFile = "dc_webconsole.log"
 // 2. 계정(.account) 로드/저장
 // ======================================================
 
+var firstRegisteredUserEmail string
+
 func loadAccounts() error {
     f, err := os.Open(accountFile)
     if err != nil {
         if os.IsNotExist(err) {
-            return nil
+            return nil // .account 파일이 없으면 그냥 반환
         }
         return err
     }
     defer f.Close()
 
     scanner := bufio.NewScanner(f)
+    lineCount := 0
     for scanner.Scan() {
         line := scanner.Text()
         fields := strings.Split(line, ",")
@@ -68,10 +71,18 @@ func loadAccounts() error {
         email := fields[0]
         password := fields[1]
         role := fields[2]
+
+        // 첫 번째 라인이라면 firstRegisteredUserEmail 설정
+        lineCount++
+        if lineCount == 1 && firstRegisteredUserEmail == "" {
+            firstRegisteredUserEmail = email
+        }
+
         users[email] = &User{Email: email, Password: password, Role: role}
     }
     return scanner.Err()
 }
+
 
 func saveAccounts() error {
     f, err := os.Create(accountFile)
@@ -598,13 +609,20 @@ func adminOnly(fn gin.HandlerFunc) gin.HandlerFunc {
     return func(c *gin.Context) {
         u := currentUser(c)
         if u == nil || u.Role != "admin" {
-            c.String(http.StatusForbidden, "어드민 권한이 필요합니다.")
+            // 어드민이 아닌 경우
+            msg := "해당 콘솔의 사용을 위해서는 관리자 권한이 필요합니다.\n" +
+                   "처음 등록된 어드민 이메일: " + firstRegisteredUserEmail
+            c.String(http.StatusForbidden, msg)
             c.Abort()
             return
         }
+        // 어드민이면 정상 진입
         fn(c)
     }
 }
+
+
+
 
 // ------------------------------------------------------
 // 10. Docker Compose 재시작 로직
@@ -676,28 +694,29 @@ func runServer() {
 
     // 로그인 필요한 라우트
     auth := r.Group("/")
-    auth.Use(AuthRequired())
+    auth.Use(AuthRequired()) // 로그인 필요
     {
-        auth.GET("/console", consolePage)
+       // ★ adminOnly 추가 ★
+       auth.GET("/console", adminOnly(consolePage))
 
-        // 디렉토리/파일/백업
-        auth.GET("/console/api/dir", listDirectoriesAPI)
-        auth.GET("/console/api/files", listFilesAPI)
-        auth.GET("/console/api/file", getFileContentAPI)
-        auth.POST("/console/api/file", saveFileAPI)
-        auth.POST("/console/api/restart", restartDockerAPI)
-        auth.GET("/console/api/backups", listBackupsAPI)
-        auth.GET("/console/api/backup/download", downloadBackupAPI)
-        auth.POST("/console/api/backup/rollback", rollbackFileAPI)
-        auth.POST("/console/api/dir/create", createDirectoryAPI)
-        auth.POST("/console/api/file/create", createFileAPI)
+       // 디렉토리/파일 관련 API
+       auth.GET("/console/api/dir", adminOnly(listDirectoriesAPI))
+       auth.GET("/console/api/files", adminOnly(listFilesAPI))
+       auth.GET("/console/api/file", adminOnly(getFileContentAPI))
+       auth.POST("/console/api/file", adminOnly(saveFileAPI))
+       auth.POST("/console/api/restart", adminOnly(restartDockerAPI))
+       auth.GET("/console/api/backups", adminOnly(listBackupsAPI))
+       auth.GET("/console/api/backup/download", adminOnly(downloadBackupAPI))
+       auth.POST("/console/api/backup/rollback", adminOnly(rollbackFileAPI))
+       auth.POST("/console/api/dir/create", adminOnly(createDirectoryAPI))
+       auth.POST("/console/api/file/create", adminOnly(createFileAPI))
 
-        // 어드민
-        auth.GET("/console/admin", adminOnly(adminPage))
-        auth.POST("/console/admin/role", adminOnly(updateUserRole))
+       // 어드민 페이지도 당연히 adminOnly
+       auth.GET("/console/admin", adminOnly(adminPage))
+       auth.POST("/console/admin/role", adminOnly(updateUserRole))
 
-        // 로그아웃
-        auth.GET("/logout", doLogout)
+       // 로그아웃 등은 adminOnly 아닙니다 (모두 가능)
+       auth.GET("/logout", doLogout)
     }
 
     log.Printf("서버가 포트 %s 로 시작됩니다.\n", serverPort)
