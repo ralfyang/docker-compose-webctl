@@ -611,7 +611,7 @@ func adminOnly(fn gin.HandlerFunc) gin.HandlerFunc {
         if u == nil || u.Role != "admin" {
             // 어드민이 아닌 경우
             msg := "해당 콘솔의 사용을 위해서는 관리자 권한이 필요합니다.\n" +
-                   "처음 등록된 어드민 이메일: " + firstRegisteredUserEmail
+                   "어드민 이메일: " + firstRegisteredUserEmail
             c.String(http.StatusForbidden, msg)
             c.Abort()
             return
