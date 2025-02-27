@@ -1,5 +1,6 @@
 # Docker Compose Web Control
-![Uploading image.png…]()
+![image](https://github.com/user-attachments/assets/e145d51e-2134-4e3d-bc2b-664be171ea14)
+
 
 ## Introduction
 Docker Compose Web Control is a tool that allows you to manage Docker Compose files and control the system through a web interface. This application is built using Golang and the Gin framework, featuring simple user authentication and authorization management.
