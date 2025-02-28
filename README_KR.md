@@ -31,8 +31,13 @@ Golang과 Gin 프레임워크를 기반으로 작성되었으며, 간단한 인�
 │   ├── console.html
 │   ├── admin.html
 │   └── register.html
+├── docker-compose-list/            # 관리 하고자 하는 docker-compose.yml 파일들의 있는 베이스 디렉토리 
+│   ├── my-docker-compose1
+│   ├── ...
+│   ├── ..
 └── static/               # 정적 파일 (CSS, JS 등)
 ```
+
 > 필요에 따라 파일 분할 가능.
 
 ## 설치 & 빌드
