@@ -1,4 +1,5 @@
 Below is an **English README.md** version incorporating the latest changes, including automatic directory creation, rollback logic (backing up the current file state before rolling back), and subcommands (`start`, `stop`, `run`) to manage the server daemon.
+한글 매뉴얼을 보시려면 [여기 - 한국어 매뉴얼](README_KR.md)를 클릭해주세요
 
 ---
 
