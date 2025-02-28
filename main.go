@@ -220,6 +220,28 @@ func isAdmin(u *User) bool {
     return u != nil && u.Role == "admin"
 }
 
+
+// 전역 변수에 저장
+var composeCommand string
+
+// detectDockerComposeCommand: v2("docker compose") 또는 v1("docker-compose") 중 사용 가능 여부 감지
+func detectDockerComposeCommand() (string, error) {
+    // 1) "docker compose version" 시도
+    if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+        // 성공하면 v2 명령
+        return "docker compose", nil
+    }
+    // 2) "docker-compose version" 시도
+    if err := exec.Command("docker-compose", "version").Run(); err == nil {
+        // 성공하면 v1 명령
+        return "docker-compose", nil
+    }
+
+    // 둘 다 실패하면 에러
+    return "", fmt.Errorf("docker-compose 명령을 찾을 수 없습니다. docker compose / docker-compose 모두 불가")
+}
+
+
 // ======================================================
 // 5. 도커 컴포즈 웹콘솔 (/console)
 // ======================================================
@@ -630,11 +652,19 @@ func adminOnly(fn gin.HandlerFunc) gin.HandlerFunc {
 
 // dockerComposeRestart: "docker-compose -f [파일] down; sleep 2; up -d" 실행
 func dockerComposeRestart(filePath string) (string, error) {
+    if composeCommand == "" {
+        return "", fmt.Errorf("docker compose 명령이 감지되지 않았습니다.")
+    }
+
     dir := filepath.Dir(filePath)
     fileBase := filepath.Base(filePath)
 
-    // down
-    cmdDown := exec.Command("docker-compose", "-f", fileBase, "down")
+    // 예) composeCommand = "docker compose"
+    // -> parts[0] = "docker", parts[1] = "compose"
+    parts := strings.Split(composeCommand, " ")
+    // down 명령
+    argsDown := append(parts[1:], "-f", fileBase, "down")
+    cmdDown := exec.Command(parts[0], argsDown...)
     cmdDown.Dir = dir
     outDown, errDown := cmdDown.CombinedOutput()
     if errDown != nil {
@@ -643,13 +673,16 @@ func dockerComposeRestart(filePath string) (string, error) {
 
     time.Sleep(2 * time.Second)
 
-    // up -d
-    cmdUp := exec.Command("docker-compose", "-f", fileBase, "up", "-d")
+    // up -d 명령
+    argsUp := append(parts[1:], "-f", fileBase, "up", "-d")
+    cmdUp := exec.Command(parts[0], argsUp...)
     cmdUp.Dir = dir
     outUp, errUp := cmdUp.CombinedOutput()
 
     return string(outDown) + "\n" + string(outUp), errUp
 }
+
+
 
 // ------------------------------------------------------
 // 11. 서버 실행 함수 (runServer)
@@ -677,6 +710,16 @@ func runServer() {
     if _, err := os.Stat(baseDir); os.IsNotExist(err) {
         os.Mkdir(baseDir, 0755)
     }
+
+
+    // ★ docker compose vs docker-compose 명령 감지 ★
+    cmd, err := detectDockerComposeCommand()
+    if err != nil {
+        log.Fatalf("[에러] Docker Compose 명령 감지 실패: %v\n", err)
+    }
+    composeCommand = cmd
+    log.Printf("Docker Compose 명령어로 '%s' 를 사용합니다.\n", composeCommand)
+
 
     // Gin 설정
     r := gin.Default()
