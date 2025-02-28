@@ -39,7 +39,7 @@ Golang과 Gin 프레임워크를 기반으로 작성되었으며, 간단한 인�
 
 1. **소스 클론** (예시)
    ```bash
-   git clone https://github.com/yourusername/docker-compose-webctl.git
+   git clone https://github.com/ralfyang/docker-compose-webctl.git
    cd docker-compose-webctl
    ```
 
