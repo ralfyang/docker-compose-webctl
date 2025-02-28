@@ -32,6 +32,10 @@ Below is an **English README.md** version incorporating the latest changes, incl
 │   ├── console.html
 │   ├── admin.html
 │   └── register.html
+├── docker-compose-list/            # docker-compose.yml base directory
+│   ├── my-docker-compose1
+│   ├── ...
+│   ├── ..
 └── static/               # Static files (CSS, JS, etc.)
 ```
 *(You can split files as needed.)*
