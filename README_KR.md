@@ -43,6 +43,7 @@ Golang과 Gin 프레임워크를 기반으로 작성되었으며, 간단한 인�
 ## 설치 & 빌드
 *설치에 있어서 golang의 설치가 필요합니다: Golang - https://go.dev/dl*
 
+
 1. **소스 클론** (예시)
    ```bash
    git clone https://github.com/ralfyang/docker-compose-webctl.git
@@ -59,6 +60,9 @@ Golang과 Gin 프레임워크를 기반으로 작성되었으며, 간단한 인�
    - 설정하지 않으면 `port`는 기본 `:15500` 사용.
 
 3. **의존성 정리 & 빌드**
+* 실행 미리보기
+[![asciicast](https://asciinema.org/a/711388.svg)](https://asciinema.org/a/711388)
+
    ```bash
    go mod tidy
    go build -o dc_webconsole main.go
