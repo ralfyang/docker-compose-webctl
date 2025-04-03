@@ -41,6 +41,7 @@ Below is an **English README.md** version incorporating the latest changes, incl
 *(You can split files as needed.)*
 
 ## Installation & Build
+*Requirement: Golang - https://go.dev/dl*
 
 1. **Clone the repository** (example):
    ```bash
