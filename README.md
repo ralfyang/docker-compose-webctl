@@ -59,6 +59,10 @@ Below is an **English README.md** version incorporating the latest changes, incl
    - If `port` is not specified, it defaults to `:15500`.
 
 3. **Install dependencies & build**:
+* Preview
+[![asciicast](https://asciinema.org/a/711388.svg)](https://asciinema.org/a/711388)
+
+   
    ```bash
    go mod tidy
    go build -o dc_webconsole main.go
